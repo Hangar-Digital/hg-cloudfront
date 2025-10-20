@@ -17,22 +17,32 @@
                     </tr>
                     <tr>
                         <th scope="row">
-                            <label for="zone_id_<?php echo $i ?>">
-                                ID da Zona:
+                            <label for="distribution_id_<?php echo $i ?>">
+                                ID da Distribuição:
                             </label>
                         </th>
                         <td>
-                            <input name="zone_id_<?php echo $i ?>" type="text" id="zone_id_<?php echo $i ?>" value="<?php echo $zone_id[$i] ?>" class="regular-text">
+                            <input name="distribution_id_<?php echo $i ?>" type="text" id="distribution_id_<?php echo $i ?>" value="<?php echo isset($configs->{"distribution_id_$i"}) ? $configs->{"distribution_id_$i"} : '' ?>" class="regular-text">
                         </td>
                     </tr>
                     <tr>
                         <th scope="row">
-                            <label for="api_token_<?php echo $i ?>">
-                                Token da API:
+                            <label for="access_key_<?php echo $i ?>">
+                                Access Key:
                             </label>
                         </th>
                         <td>
-                            <input name="api_token_<?php echo $i ?>" type="text" id="api_token_<?php echo $i ?>" value="<?php echo $api_token[$i] ?>" class="regular-text">
+                            <input name="access_key_<?php echo $i ?>" type="text" id="access_key_<?php echo $i ?>" value="<?php echo isset($configs->{"access_key_$i"}) ? $configs->{"access_key_$i"} : '' ?>" class="regular-text">
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">
+                            <label for="secret_key_<?php echo $i ?>">
+                                Secret Key:
+                            </label>
+                        </th>
+                        <td>
+                            <input name="secret_key_<?php echo $i ?>" type="text" id="secret_key_<?php echo $i ?>" value="<?php echo isset($configs->{"secret_key_$i"}) ? $configs->{"secret_key_$i"} : '' ?>" class="regular-text">
                         </td>
                     </tr>
                 </tbody>

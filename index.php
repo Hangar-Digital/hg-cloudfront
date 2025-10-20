@@ -2,7 +2,7 @@
 /*
 Plugin Name: HG CloudFront
 Description: Acesso rápido e fácil para limpar o cache do CloudFront.
-Version: 2.0
+Version: 1.0
 Author: Hangar Digital
 Author URI: https://hangar.digital/
 */
@@ -77,7 +77,7 @@ class HG_Cloudfront {
 
         $configs = $this->get_options();
 
-        if (empty($configs) || $configs->zone_id_1 == '' || $configs->api_token_1 == '') {
+        if (empty($configs) || $configs->distribution_id_1 == '' || $configs->access_key_1 == '' || $configs->secret_key_1 == '') {
             $cloudfront_msg->error = 'Os dados de API não foram configurados!';
             $_SESSION['cloudfront_msg'] = $cloudfront_msg;
             return;
@@ -85,14 +85,15 @@ class HG_Cloudfront {
 
         $res = [];
         for ($i = 1; $i <= 2; $i++) {
-            $zone_id = isset($configs->{"zone_id_$i"}) ? $configs->{"zone_id_$i"} : '';
-            $api_token = isset($configs->{"api_token_$i"}) ? $configs->{"api_token_$i"} : '';
+            $distribution_id = isset($configs->{"distribution_id_$i"}) ? $configs->{"distribution_id_$i"} : '';
+            $access_key = isset($configs->{"access_key_$i"}) ? $configs->{"access_key_$i"} : '';
+            $secret_key = isset($configs->{"secret_key_$i"}) ? $configs->{"secret_key_$i"} : '';
 
-            if ($zone_id == '' || $api_token == '') {
+            if ($distribution_id == '' || $secret_key == '') {
                 continue;
             }
-            
-            $res = $this->consult_rest($zone_id, $api_token);
+
+            $res = $this->consult_rest($distribution_id, $access_key, $secret_key);
 
             if (!$res->success) {
                 break;
@@ -114,27 +115,49 @@ class HG_Cloudfront {
         }
     }
 
-    function consult_rest($zone_id, $api_token) {
+    function consult_rest($distribution_id, $access_key, $secret_key) {
         try {
+            // Data atual em formato ISO8601
+            $date = gmdate('Ymd\THis\Z');
+            
+            $params = [
+                'DistributionId' => $distribution_id,
+                'InvalidationBatch' => [
+                    'Paths' => [
+                        'Quantity' => 1,
+                        'Items' => ['/*']
+                    ],
+                    'CallerReference' => time()
+                ]
+            ];
+
+            // Configuração do request
             $ch = curl_init();
-            curl_setopt($ch, CURLOPT_URL, 'https://api.cloudfront.com/client/v4/zones/'.$zone_id.'/purge_cache');
+            curl_setopt($ch, CURLOPT_URL, "https://cloudfront.amazonaws.com/2020-05-31/distribution/{$distribution_id}/invalidation");
             curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                'Content-Type: application/json',
-                'Authorization: Bearer '.$api_token
+                'Content-Type: application/xml',
+                'X-Amz-Date: ' . $date,
+                'Authorization: AWS ' . $access_key . ':' . $secret_key
             ]);
             curl_setopt($ch, CURLOPT_POST, 1);
-            curl_setopt( $ch, CURLOPT_POSTFIELDS, json_encode([
-                'purge_everything' => true
-            ]) );
+            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($params));
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            $res = json_decode( curl_exec($ch) );
+            
+            $response = curl_exec($ch);
             curl_close($ch);
 
-        } catch (Exception $e) {
-            return $e->getMessage();
-        }
+            echo var_export($response); exit;
 
-        return $res;
+            return $res;
+
+        } catch (Exception $e) {
+            $res = new stdClass();
+            $res->success = false;
+            $res->errors = [
+                (object)['message' => $e->getMessage()]
+            ];
+            return $res;
+        }
     }
 
     function show_message() {
@@ -204,11 +227,6 @@ class HG_Cloudfront {
 	function display_settings() {
         $configs = $this->get_options();
 
-        for ($i = 1; $i <= 2; $i++) {
-            $zone_id[$i] = isset($configs->{"zone_id_$i"}) ? $configs->{"zone_id_$i"} : '';
-            $api_token[$i] = isset($configs->{"api_token_$i"}) ? $configs->{"api_token_$i"} : '';
-        }
-
 		include 'settings.php';
 	}
 
@@ -227,8 +245,9 @@ class HG_Cloudfront {
 
         $data = [];
         for ($i = 1; $i <= 2; $i++) {
-            $data['zone_id_'.$i] = isset($_POST['zone_id_'.$i]) ? $_POST['zone_id_'.$i] : '';
-            $data['api_token_'.$i] = isset($_POST['api_token_'.$i]) ? $_POST['api_token_'.$i] : '';
+            $data['distribution_id_'.$i] = isset($_POST['distribution_id_'.$i]) ? $_POST['distribution_id_'.$i] : '';
+            $data['access_key_'.$i] = isset($_POST['access_key_'.$i]) ? $_POST['access_key_'.$i] : '';
+            $data['secret_key_'.$i] = isset($_POST['secret_key_'.$i]) ? $_POST['secret_key_'.$i] : '';
         } 
 		update_option('hgcloudfront_settings', Cripto::encrypt( json_encode($data), NONCE_SALT) );
 		
