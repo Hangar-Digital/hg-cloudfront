@@ -137,7 +137,7 @@ class HG_Cloudfront {
             curl_setopt($ch, CURLOPT_HTTPHEADER, [
                 'Content-Type: application/xml',
                 'X-Amz-Date: ' . $date,
-                'Authorization: AWS ' . $access_key . ':' . $secret_key
+                'Authorization: AWS4-HMAC-SHA256 Credential=' . $access_key . '/' . gmdate('Ymd') . '/us-east-1/cloudfront/aws4_request, SignedHeaders=host;x-amz-date, Signature=' . $this->generate_signature($date, $access_key, $secret_key, $distribution_id)
             ]);
             curl_setopt($ch, CURLOPT_POST, 1);
             curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($params));
@@ -148,7 +148,7 @@ class HG_Cloudfront {
 
             echo var_export($response); exit;
 
-            return $res;
+            return json_decode($response);
 
         } catch (Exception $e) {
             $res = new stdClass();
@@ -257,6 +257,22 @@ class HG_Cloudfront {
 			'As configurações foram salvas com sucesso!',
 			'updated'
 		);
+    }
+
+    function generate_signature($date, $access_key, $secret_key, $distribution_id) {
+        // Implementação da geração da assinatura
+        $string_to_sign = "AWS4-HMAC-SHA256\n" . $date . "\n" . gmdate('Ymd') . "/us-east-1/cloudfront/aws4_request\n" . hash('sha256', "<payload>");
+
+        // Geração da chave
+        $date_key = hash_hmac('sha256', gmdate('Ymd'), "AWS4" . $secret_key, true);
+        $date_region_key = hash_hmac('sha256', 'us-east-1', $date_key, true);
+        $date_region_service_key = hash_hmac('sha256', 'cloudfront', $date_region_key, true);
+        $signing_key = hash_hmac('sha256', 'aws4_request', $date_region_service_key, true);
+
+        // Geração da assinatura
+        $signature = hash_hmac('sha256', $string_to_sign, $signing_key);
+
+        return $signature;
     }
 }
 
