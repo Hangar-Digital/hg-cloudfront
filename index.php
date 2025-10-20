@@ -101,7 +101,7 @@ class HG_Cloudfront {
         }
 
         if ($res->success) {
-            $cloudfront_msg->success = 'O cache foi limpo com sucesso!';
+            $cloudfront_msg->success = 'A limpeza de cache foi solicitada! Em até 1 minuto deve ser concluída.';
             $_SESSION['cloudfront_msg'] = $cloudfront_msg;
         
         } else {
@@ -120,16 +120,20 @@ class HG_Cloudfront {
             // Data atual em formato ISO8601
             $date = gmdate('Ymd\THis\Z');
             
-            $params = [
-                'DistributionId' => $distribution_id,
-                'InvalidationBatch' => [
-                    'Paths' => [
-                        'Quantity' => 1,
-                        'Items' => ['/*']
-                    ],
-                    'CallerReference' => time()
-                ]
-            ];
+            // Corpo da requisição em XML (obrigatório para CloudFront API)
+            $body = '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
+            $body .= '<InvalidationBatch xmlns="http://cloudfront.amazonaws.com/doc/2020-05-31/">' . "\n";
+            $body .= '    <Paths>' . "\n";
+            $body .= '        <Quantity>1</Quantity>' . "\n";
+            $body .= '        <Items>' . "\n";
+            $body .= '            <Path>/*</Path>' . "\n";
+            $body .= '        </Items>' . "\n";
+            $body .= '    </Paths>' . "\n";
+            $body .= '    <CallerReference>' . time() . '</CallerReference>' . "\n";
+            $body .= '</InvalidationBatch>';
+
+            // Gerar assinatura
+            $signature = $this->generate_signature($date, $access_key, $secret_key, $distribution_id, $body);
 
             // Configuração do request
             $ch = curl_init();
@@ -137,16 +141,25 @@ class HG_Cloudfront {
             curl_setopt($ch, CURLOPT_HTTPHEADER, [
                 'Content-Type: application/xml',
                 'X-Amz-Date: ' . $date,
-                'Authorization: AWS4-HMAC-SHA256 Credential=' . $access_key . '/' . gmdate('Ymd') . '/us-east-1/cloudfront/aws4_request, SignedHeaders=host;x-amz-date, Signature=' . $this->generate_signature($date, $access_key, $secret_key, $distribution_id)
+                'Host: cloudfront.amazonaws.com',
+                'Authorization: AWS4-HMAC-SHA256 Credential=' . $access_key . '/' . gmdate('Ymd') . '/us-east-1/cloudfront/aws4_request, SignedHeaders=host;x-amz-date, Signature=' . $signature
             ]);
             curl_setopt($ch, CURLOPT_POST, 1);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($params));
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $body);
             curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
             
             $response = curl_exec($ch);
+            $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             curl_close($ch);
 
-            echo var_export($response); exit;
+            // Parse da resposta XML
+            $xml = simplexml_load_string($response);
+
+            if ($http_code >= 200 && $http_code < 300) {
+                $res = new stdClass();
+                $res->success = true;
+                return $res;
+            }
 
             return json_decode($response);
 
@@ -259,18 +272,31 @@ class HG_Cloudfront {
 		);
     }
 
-    function generate_signature($date, $access_key, $secret_key, $distribution_id) {
-        // Implementação da geração da assinatura
-        $string_to_sign = "AWS4-HMAC-SHA256\n" . $date . "\n" . gmdate('Ymd') . "/us-east-1/cloudfront/aws4_request\n" . hash('sha256', "<payload>");
+    function generate_signature($date, $access_key, $secret_key, $distribution_id, $body) {
+        // Canonical Request
+        $method = 'POST';
+        $canonical_uri = "/2020-05-31/distribution/{$distribution_id}/invalidation";
+        $canonical_querystring = '';
+        $canonical_headers = "host:cloudfront.amazonaws.com\nx-amz-date:{$date}\n";
+        $signed_headers = 'host;x-amz-date';
+        $payload_hash = hash('sha256', $body);
+        
+        $canonical_request = "{$method}\n{$canonical_uri}\n{$canonical_querystring}\n{$canonical_headers}\n{$signed_headers}\n{$payload_hash}";
+        
+        // String to Sign
+        $algorithm = 'AWS4-HMAC-SHA256';
+        $credential_scope = gmdate('Ymd') . '/us-east-1/cloudfront/aws4_request';
+        $string_to_sign = "{$algorithm}\n{$date}\n{$credential_scope}\n" . hash('sha256', $canonical_request);
 
-        // Geração da chave
-        $date_key = hash_hmac('sha256', gmdate('Ymd'), "AWS4" . $secret_key, true);
-        $date_region_key = hash_hmac('sha256', 'us-east-1', $date_key, true);
-        $date_region_service_key = hash_hmac('sha256', 'cloudfront', $date_region_key, true);
-        $signing_key = hash_hmac('sha256', 'aws4_request', $date_region_service_key, true);
+        // Signing Key
+        $k_secret = 'AWS4' . $secret_key;
+        $k_date = hash_hmac('sha256', gmdate('Ymd'), $k_secret, true);
+        $k_region = hash_hmac('sha256', 'us-east-1', $k_date, true);
+        $k_service = hash_hmac('sha256', 'cloudfront', $k_region, true);
+        $k_signing = hash_hmac('sha256', 'aws4_request', $k_service, true);
 
-        // Geração da assinatura
-        $signature = hash_hmac('sha256', $string_to_sign, $signing_key);
+        // Signature
+        $signature = hash_hmac('sha256', $string_to_sign, $k_signing);
 
         return $signature;
     }
